@@ -5,7 +5,9 @@
 #include <vector>
 #include <ranges>
 #include <optional>
+#include <fstream>
 #include <charconv>
+#include <print>
 
 
 struct Info {
@@ -31,24 +33,50 @@ struct Message{
     auto operator<=>(const Message&) const = default; 
 };
 
+struct MessageTypeToStringVisitor {
+    std::string operator()(Info) const { return "I"; }
+    std::string operator()(Warning) const { return "W"; }
+    std::string operator()(Error error) const {
+        return std::format("E {}", error.code);
+    }
+};
+
+std::string toString(const MessageType& msgType) {
+    return std::visit(MessageTypeToStringVisitor{}, msgType);
+}
+
 struct Unknown {
     std::string msg;
     auto operator<=>(const Unknown&) const = default;
 };
 
 std::string unwords (const std::vector<std::string>& words, int to_drop){
-    auto words_pipe = words 
+    return words 
     | std::views::drop(to_drop)
-    | std::views::join_with(' ');
-    
-    return std::string(words_pipe.begin(), words_pipe.end());
-}
+    | std::views::join_with(' ')
+    | std::ranges::to<std::string>();
+};
 
 using LogMessage = std::variant<Message, Unknown>;
 
 LogMessage make_message(MessageType type, Timestamp timestamp, std::string msg) {
     return Message{type, timestamp, std::move(msg)};
 };
+
+struct LogMessageToStringVisitor {
+    std::string operator()(const Message& msg) const {
+        return std::format("{} {} {}", toString(msg.type), msg.timestamp, msg.msg);
+    }
+
+    std::string operator()(const Unknown& unknown) const {
+        return std::format("Unknown: {}", unknown.msg);
+    }
+};
+
+std::string toString(const LogMessage& logMessage) {
+    return std::visit(LogMessageToStringVisitor{}, logMessage);
+}
+
 
 std::optional<int> to_int(std::string_view sv) {
     int r;
@@ -64,16 +92,12 @@ std::optional<int> to_int(std::string_view sv) {
 
 LogMessage parseMessage(std::string str){
     // Step 1:: Split words 
-    auto words_pipe = str | std::views::split(' ')
+    std::vector<std::string> words = str 
+    | std::views::split(' ')
     | std::views::transform([](const auto& range) {
         return std::string{range.begin(), range.end()};
-    });
-
-    //Step 2: Combine words
-    std::vector<std::string> words;
-    for (const std::string& word : words_pipe) {
-        words.push_back(std::move(word));
-    };
+    })
+    | std::ranges::to<std::vector>();
 
     auto get = [&words](size_t i) -> std::optional<std::string>{
         if (i < words.size()) {
@@ -91,14 +115,14 @@ LogMessage parseMessage(std::string str){
     return get(0).and_then([&get_int, &words](const std::string& msgTypeStr) {
         std::optional<LogMessage> result;
 
-        if(msgTypeStr == "I") {
+        if(msgTypeStr == "I"){
             result = 
                 get_int(1).
                 transform([&words](int timestamp) {
                     return make_message(Info{}, timestamp, unwords(words, 2));  
             });
         }
-        else if(msgTypeStr == "W") {
+        else if(msgTypeStr == "W"){
             result = 
             get_int(1).
             transform([&words](int timestamp) {
@@ -122,6 +146,22 @@ LogMessage parseMessage(std::string str){
     }).value_or(Unknown{str});
 };
 
+std::string readFile(const std::string& filename) {
+    std::ifstream file(filename, std::ios::binary); // open in binary to avoid newline translation
+    return std::string((std::istreambuf_iterator<char>(file)),
+                         std::istreambuf_iterator<char>());
+}
+
+std::vector<LogMessage> parseFile(std::string filename){
+std::string file_contents = readFile(filename);
+return file_contents 
+| std::views::split('\n')
+| std::views::transform([](const auto& line){
+    return parseMessage(std::string{line.begin(), line.end()});
+})
+| std::ranges::to<std::vector>();
+};
+
 int main() {
     std::cout << "============== Program Starts Here ==============\n";
     
@@ -140,4 +180,10 @@ int main() {
     assert(
     (parseMessage("Not in the right format!") == 
     LogMessage{ Unknown{"Not in the right format!"}}));
+
+    auto logMessages = parseFile("LogsHandler/sample.log");
+
+    for(const auto& logMessage : logMessages) {
+        std::println("Message is {}", toString(logMessage)); 
+    };
 };
