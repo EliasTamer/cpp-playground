@@ -1,5 +1,5 @@
 {
-    "cmake.sourceDirectory": "/home/gunbladehero/Desktop/Folders/Projects/cpp-playground/credit-card-validator",
+    "cmake.sourceDirectory": "/home/gunbladehero/Desktop/Folders/Projects/cpp-playground",
     "files.associations": {
         "any": "cpp",
         "array": "cpp",
@@ -73,5 +73,6 @@
         "cinttypes": "cpp",
         "typeinfo": "cpp",
         "variant": "cpp"
-    }
+    },
+    "C_Cpp.default.compilerPath": "/usr/bin/g++"
 }

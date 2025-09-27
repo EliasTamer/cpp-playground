@@ -9,16 +9,20 @@
 
 
 struct Info {
-    auto operator<=>(const Info&) const = default;};
-struct Warning {
-    auto operator<=>(const Warning&) const = default;};
-struct Error {int code;
-    auto operator<=>(const Error&) const = default;};
+    auto operator<=>(const Info&) const = default;
+};
 
+struct Warning {
+    auto operator<=>(const Warning&) const = default;
+};
+
+struct Error {
+    int code;
+    auto operator<=>(const Error&) const = default;
+};
 
 using MessageType = std::variant<Info, Warning, Error>;
 using Timestamp = int;
-
 
 struct Message{
     MessageType type;
@@ -41,6 +45,10 @@ std::string unwords (const std::vector<std::string>& words, int to_drop){
 }
 
 using LogMessage = std::variant<Message, Unknown>;
+
+LogMessage make_message(MessageType type, Timestamp timestamp, std::string msg) {
+    return Message{type, timestamp, std::move(msg)};
+};
 
 std::optional<int> to_int(std::string_view sv) {
     int r;
@@ -74,39 +82,38 @@ LogMessage parseMessage(std::string str){
         else {
             return std::nullopt;
         }
-    }; 
+    };
+    
+    auto get_int = [&get](size_t i) -> std::optional<int> {
+        return get(i).and_then(to_int);
+    };
 
-    return get(0).and_then([&get, &words](const std::string& msgTypeStr) {
+    return get(0).and_then([&get_int, &words](const std::string& msgTypeStr) {
         std::optional<LogMessage> result;
 
         if(msgTypeStr == "I") {
             result = 
-                get(1).
-                and_then(to_int).
+                get_int(1).
                 transform([&words](int timestamp) {
-                return LogMessage{Message {Info{}, timestamp, unwords(words, 2)}};
+                    return make_message(Info{}, timestamp, unwords(words, 2));  
             });
         }
         else if(msgTypeStr == "W") {
             result = 
-            get(1).
-            and_then(to_int).
+            get_int(1).
             transform([&words](int timestamp) {
-            return LogMessage{Message {Warning{}, timestamp, unwords(words, 2)}};
+                return make_message(Warning{}, timestamp, unwords(words, 2));
         });
         } 
         else if (msgTypeStr == "E"){
             result = 
-            get(1).
-            and_then([&words, &get](const std::string& codeStr){
-                return to_int(codeStr).and_then([&words, &get](int code){
-                    return get(2)
-                    .and_then(to_int)
+            get_int(1).
+            and_then([&words, &get_int](int code){
+                    return get_int(2)
                     .transform([&words, code](int timestamp) {
-                        return LogMessage{Message {Error{code}, timestamp, unwords(words, 3)}};
+                        return make_message(Error{code}, timestamp, unwords(words, 3));
                 });
             });
-        });
         }
         else {
             result = std::nullopt;
@@ -117,6 +124,7 @@ LogMessage parseMessage(std::string str){
 
 int main() {
     std::cout << "============== Program Starts Here ==============\n";
+    
     assert(
         (parseMessage("I 29 help help") == 
         LogMessage{ Message {Info{}, 29, "help help"}}));
