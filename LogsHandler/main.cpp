@@ -8,6 +8,7 @@
 #include <fstream>
 #include <charconv>
 #include <print>
+#include <memory>
 
 
 struct Info {
@@ -69,7 +70,7 @@ struct LogMessageToStringVisitor {
     }
 
     std::string operator()(const Unknown& unknown) const {
-        return std::format("Unknown: {}", unknown.msg);
+        return std::format("Unknown: {}", unknown.msg); 
     }
 };
 
@@ -162,6 +163,50 @@ return file_contents
 | std::ranges::to<std::vector>();
 };
 
+
+struct Leaf{};
+struct Node;
+
+using MessageTree = std::variant<Leaf, std::unique_ptr<Node>>; 
+
+struct Node {
+    Message msg;
+    MessageTree left;
+    MessageTree right;
+};
+
+struct InsertVisit {
+    Message msg;
+
+    MessageTree operator()(Leaf) const {
+        return std::make_unique<Node>(msg, Leaf{}, Leaf{});
+    };
+
+    MessageTree operator()(std::unique_ptr<Node>& node) const {
+        Timestamp cur_value = node->msg.timestamp;
+        if(msg.timestamp < cur_value ){
+             node->left = std::visit(*this, node->left);  
+        } else if(msg.timestamp > cur_value ){
+            node->right = std::visit(*this, node->right);  
+       }
+
+       return std::move(node);
+    };
+};
+
+
+MessageTree insert(const Message& message, MessageTree& tree) {
+    return std::visit(InsertVisit{message}, tree);
+};
+
+MessageTree insert(const LogMessage& logMessage, MessageTree& tree) {
+    if(const auto* _ = std::get_if<Unknown>(&logMessage)) {   
+        return std::move(tree);
+    }
+    const auto* message = std::get_if<Message>(&logMessage);
+    return insert(*message, tree);
+};
+ 
 int main() {
     std::cout << "============== Program Starts Here ==============\n";
     
